@@ -1,0 +1,111 @@
+#!/bin/bash
+function continuo {
+	msgm="$1"
+	[ -z "$1" ] &&	msgm="Continuar"
+	SIG ">";echo -en "\e[1;32m""$msgm"" \e[0m[y/n/pular][Padrao: y]? "
+	read -t5 -n1 opsao
+	[[ "$opsao" = "n" || "$opsao" = "N" ]] &&	exit 1
+	[[ "$opsao" = "p" || "$opsao" = "P" ]] &&	return 1
+	return 0
+}
+function SIG {
+	case $1 in
+		"+") echo -en "\n\e[1;34m [\e[0m\e[1;32;1m+\e[0m\e[1;34m] $2\e[0m" ;;
+		"-") echo -en "\n\e[1;34m [\e[0m\e[1;31;1m-\e[0m\e[1;34m] $2\e[0m" ;;
+		">") echo -en "\n\e[1;34m [\e[0m\e[1;37;1m>\e[0m\e[1;34m] $2\e[0m" ;;
+		".") echo -en "\n\e[1;34m [\e[0m\e[1;35;1m.\e[0m\e[1;34m] $2\e[0m" ;;
+		"err") SIG "-"; echo -en "\e[5;31mERRO $2\e[0m" ;;
+		"ok")  SIG "+"; ;;
+		*)	   echo -en "\e[1;34m [\e[0m\e[1;37;1m$1\e[0m\e[1;34m] $2\e[0m"
+	esac
+}
+
+
+function instalar {
+	SIG ".";echo -en "\e[1;0;1mInstalando\e[0m \e[1;32m$1\e[0m:\n"
+
+	comando="( SIG 'err' 'Arquivo nao Valido' && exit 1 )"
+	[[ "$2" = "rpm" || "$2" = "RPM" ]] && comando="(sudo rpm -i --nodigest $1)"
+	[[ "$2" = "deb" || "$2" = "DEB" ]] && comando="(sudo dpkg -i $1)"
+
+	if continuo ;then
+		if ! $(eval $comando) ;then
+			SIG "err";echo -en "de instalaçao!\n"
+		else
+			SIG "+" "Instalado com Sucesso!";	fi
+	fi
+    SIG ".";echo -en "Configurando >>\n"
+	if continuo ;then
+		if ! sudo /opt/sentinelone/bin/sentinelctl management token set $token;then
+			SIG "err";echo -en "de token\n"
+		else
+			SIG "+" "Token Instalado";	fi
+	fi
+	if continuo ;then
+		if ! sudo /opt/sentinelone/bin/sentinelctl control start ; then
+			SIG "err";echo -en "on start SentinelOne\n"
+		else
+			SIG "+" "SentinelOne Started";	fi
+	fi
+	SIG ">" "Waiting ." ; sleep 2 ; echo -en " ." ; sleep 2 ; echo -en " ." ; sleep 2
+
+	SIG "+" "Agente Status:"
+	if ! sudo /opt/sentinelone/bin/sentinelctl control status ;then
+                SIG "err";echo -en "on start SentinelOne\n";fi
+}
+function lista(){
+nArq=0
+lista_repositorio=($nArq)
+#
+	if ! ( sudo ls $1/ > '/dev/null' );then
+		SIG "err"; echo -en "no diretorio \e[1;37m$1\e[0m"
+		exit
+	fi
+	SIG ".";echo -en "Escolha o arquivo a ser instalado: \n"
+
+	for ARQ in $( ls $1/ )
+	do
+	i="$1/$ARQ"
+		if [ -f $i ];then
+			last=$((${#i}-4))
+			if [ "${i:$last:4}" = ".deb" ] || [ "${i:$last:4}" = ".DEB" ] || [ "${i:$last:4}" = ".rpm" ] || [ "${i:$last:4}" = ".RPM" ];then
+				nArq=$(($nArq+1))
+				lista_repositorio+=($ARQ)
+				echo -en "\n\t";SIG "$nArq" "${i:$last:4}"; echo -en ":  ${lista_repositorio[$nArq]}"
+			fi
+		fi
+	done
+	echo -en "\n"
+}
+if [ -r token.txt ]
+then
+    token=$(cat token.txt)
+    SIG ">" "Group Token:";
+    SIG "." ; echo -en "\e[1;37;$token\e[0m"
+    lista "."
+	SIG ">" ; read -n1 rpm_install
+	if [ -a  "${lista_repositorio[$rpm_install]}" ];then
+		last=$((${#lista_repositorio[$rpm_install]}-3))
+		instalar "${lista_repositorio[$rpm_install]}" "${lista_repositorio[$rpm_install]:$last:3}"
+	else
+		SIG err ; echo -en "Arquivo Nao Existe"
+	fi
+	if continuo "Criar Script facilitador [OneSentinel]?"; then
+		echo -en "\n"
+		SIG "$.PATH" "/n$PATH"
+		SIG ">" "Diretório: " ; read usrGames
+		[[ "$usrGames" = "" ]] && usrGames="/usr/games"
+		if ! sudo touch "$usrGames/OneSentinel";then
+			SIG "err";echo -en "na criação de $usrGames/OneSentinel"
+		else
+			echo -e "#!/bin/bash\necho -e 'SentinelOne agent commandline control
+Usage: /opt/sentinelone/bin/sentinelctl [OPTIONS] SUBCOMMAND'
+sudo /opt/sentinelone/bin/sentinelctl $""1" | sudo tee -a "$usrGames/OneSentinel"
+			SIG "+" "Adicionado $usrGames/OneSentinel \n"
+		fi
+
+	fi
+
+else
+  SIG err ; echo -en "NO token\n"
+fi
